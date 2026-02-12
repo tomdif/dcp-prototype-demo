@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCP — Decision Chain Proof Prototype</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-deep: #060a13;
+    --bg-base: #0a0e17;
+    --bg-raised: #0f1724;
+    --bg-surface: #151d2e;
+    --border-subtle: rgba(99,179,237,0.08);
+    --border-mid: #1e293b;
+    --border-active: rgba(59,130,246,0.3);
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-dim: #475569;
+    --text-ghost: #334155;
+    --blue: #3b82f6;
+    --blue-light: #60a5fa;
+    --blue-pale: #93c5fd;
+    --blue-glow: rgba(59,130,246,0.25);
+    --green: #10b981;
+    --green-bg: rgba(16,185,129,0.12);
+    --yellow: #f59e0b;
+    --yellow-bg: rgba(245,158,11,0.12);
+    --red: #ef4444;
+    --red-bg: rgba(239,68,68,0.12);
+    --purple: #8b5cf6;
+    --purple-bg: rgba(139,92,246,0.12);
+    --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    --sans: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-base);
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-ghost); }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes glowPulse { 0%,100% { box-shadow: 0 0 8px var(--blue-glow); } 50% { box-shadow: 0 0 20px var(--blue-glow); } }
+
+  .fade-in { animation: fadeIn 0.3s ease-out; }
+
+  /* ─── HEADER ─── */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: linear-gradient(180deg, #0f172a 0%, var(--bg-base) 100%);
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--blue); transition: all 0.4s;
+  }
+  .status-dot.active { background: var(--yellow); box-shadow: 0 0 12px var(--yellow); }
+  .status-dot.complete { background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .status-dot.error { background: var(--red); box-shadow: 0 0 12px var(--red); }
+  .logo { font-size: 17px; font-weight: 700; letter-spacing: 3px; color: var(--text-primary); font-family: var(--sans); }
+  .logo-sub { font-size: 11px; color: var(--text-dim); letter-spacing: 1.5px; }
+  .version-badge {
+    font-size: 10px; color: var(--text-dim); padding: 2px 8px;
+    border: 1px solid var(--border-mid); border-radius: 3px;
+  }
+  .btn-reset {
+    padding: 5px 14px; background: transparent; border: 1px solid var(--border-mid);
+    border-radius: 4px; color: var(--text-secondary); cursor: pointer; font-size: 11px;
+    letter-spacing: 0.5px; font-family: var(--mono); transition: all 0.2s;
+  }
+  .btn-reset:hover { border-color: var(--text-dim); color: var(--text-primary); }
+
+  /* ─── PIPELINE BAR ─── */
+  .pipeline-bar {
+    padding: 12px 24px; border-bottom: 1px solid var(--border-subtle);
+    display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
+  }
+  .pipeline-step {
+    padding: 4px 10px; border-radius: 3px; font-size: 10px; letter-spacing: 0.8px;
+    border: 1px solid var(--border-mid); color: var(--text-ghost); transition: all 0.3s;
+    white-space: nowrap;
+  }
+  .pipeline-step.active {
+    background: rgba(59,130,246,0.15); color: var(--blue-light);
+    border-color: var(--border-active); font-weight: 700;
+  }
+  .pipeline-step.past {
+    background: var(--green-bg); color: var(--green);
+    border-color: rgba(16,185,129,0.15);
+  }
+  .pipeline-connector { width: 16px; height: 1px; background: var(--border-mid); flex-shrink: 0; }
+  .pipeline-connector.past { background: var(--green); }
+
+  /* ─── LAYOUT ─── */
+  .main-grid {
+    display: grid; grid-template-columns: 320px 1fr 300px;
+    height: calc(100vh - 92px); overflow: hidden;
+  }
+  @media (max-width: 1100px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .left-panel, .right-panel { display: none; }
+  }
+
+  .left-panel {
+    border-right: 1px solid var(--border-subtle); padding: 16px;
+    overflow-y: auto; background: rgba(6,10,19,0.4);
+  }
+  .center-panel { display: flex; flex-direction: column; overflow: hidden; }
+  .right-panel {
+    border-left: 1px solid var(--border-subtle);
+    display: flex; flex-direction: column; background: rgba(6,10,19,0.4);
+  }
+
+  /* ─── SECTION LABELS ─── */
+  .section-label {
+    font-size: 10px; letter-spacing: 1.5px; color: var(--text-dim);
+    font-weight: 600; margin-bottom: 10px;
+  }
+
+  /* ─── PACK BUTTONS ─── */
+  .pack-btn {
+    display: block; width: 100%; padding: 10px 12px; text-align: left;
+    cursor: pointer; border-radius: 4px; font-size: 11px; line-height: 1.4;
+    background: rgba(15,23,42,0.5); border: 1px solid var(--border-mid);
+    color: var(--text-muted); transition: all 0.2s; font-family: var(--mono);
+    margin-bottom: 6px;
+  }
+  .pack-btn:hover { border-color: var(--text-dim); }
+  .pack-btn.selected {
+    background: rgba(59,130,246,0.1); border-color: var(--border-active);
+    color: var(--blue-pale);
+  }
+  .pack-btn .pack-id { font-weight: 600; margin-bottom: 3px; color: var(--text-secondary); }
+  .pack-btn.selected .pack-id { color: #bfdbfe; }
+  .pack-btn .pack-name { font-size: 10px; }
+
+  /* ─── METADATA BOX ─── */
+  .meta-box {
+    background: rgba(15,23,42,0.6); border: 1px solid var(--border-mid);
+    border-radius: 4px; padding: 12px; font-size: 11px;
+  }
+  .meta-label { color: var(--text-dim); margin-bottom: 2px; font-size: 10px; }
+  .meta-value { color: var(--text-primary); margin-bottom: 8px; word-break: break-all; }
+  .meta-value.blue { color: var(--blue-pale); }
+  .meta-value.yellow { color: var(--yellow); }
+  .meta-value.green { color: var(--green); }
+
+  /* ─── CONSTRAINT CHIPS ─── */
+  .constraint-chip {
+    padding: 7px 10px; background: rgba(15,23,42,0.4);
+    border: 1px solid var(--border-mid); border-radius: 3px; margin-bottom: 4px;
+    transition: all 0.3s;
+  }
+  .constraint-chip-header { display: flex; justify-content: space-between; align-items: center; }
+  .constraint-chip-id { font-size: 10px; font-weight: 600; color: var(--text-secondary); }
+  .constraint-chip-det { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; }
+  .constraint-chip-label { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ─── SCENARIO INPUT ─── */
+  .scenario-area {
+    padding: 20px; border-bottom: 1px solid var(--border-subtle);
+  }
+  .scenario-textarea {
+    width: 100%; min-height: 80px; padding: 12px;
+    background: rgba(15,23,42,0.6); border: 1px solid var(--border-mid);
+    border-radius: 4px; color: var(--text-primary); font-family: var(--mono);
+    font-size: 12px; resize: vertical; line-height: 1.6; outline: none;
+    transition: border-color 0.2s;
+  }
+  .scenario-textarea:focus { border-color: rgba(59,130,246,0.4); }
+  .scenario-textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .btn-run {
+    margin-top: 10px; padding: 11px 32px;
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    border: none; border-radius: 4px; color: #fff; font-size: 12px;
+    font-weight: 700; letter-spacing: 1px; cursor: pointer;
+    font-family: var(--mono); box-shadow: 0 0 24px var(--blue-glow);
+    transition: all 0.2s;
+  }
+  .btn-run:hover { box-shadow: 0 0 32px rgba(59,130,246,0.4); transform: translateY(-1px); }
+
+  /* ─── RESULTS AREA ─── */
+  .results-area { flex: 1; overflow-y: auto; padding: 20px; }
+
+  .result-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .btn-raw {
+    background: none; border: 1px solid var(--border-mid); border-radius: 3px;
+    color: var(--text-dim); font-size: 9px; padding: 3px 8px; cursor: pointer;
+    font-family: var(--mono); transition: all 0.2s;
+  }
+  .btn-raw:hover { border-color: var(--text-dim); color: var(--text-secondary); }
+
+  .raw-block {
+    background: var(--bg-deep); border: 1px solid var(--border-mid);
+    border-radius: 4px; padding: 12px; font-size: 10px;
+    overflow: auto; margin-bottom: 12px; color: var(--text-muted);
+    max-height: 200px; white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* ─── STEP CARD ─── */
+  .step-card {
+    background: rgba(15,23,42,0.6); border: 1px solid var(--border-mid);
+    border-radius: 4px; padding: 14px; margin-bottom: 8px;
+    animation: fadeIn 0.3s ease-out;
+  }
+  .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .step-badge {
+    background: rgba(59,130,246,0.2); color: var(--blue-light);
+    padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700;
+  }
+  .step-title { font-size: 12px; color: var(--text-primary); font-weight: 600; }
+  .step-conf { font-size: 10px; color: var(--text-dim); margin-left: auto; }
+  .step-conclusion { font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 6px; }
+  .step-inputs { font-size: 10px; color: var(--text-dim); }
+  .step-inputs span { color: var(--text-ghost); }
+  .step-excluded { font-size: 10px; color: var(--yellow); margin-top: 3px; }
+  .step-excluded span { color: #92400e; }
+
+  /* ─── AUDIT EVAL CARD ─── */
+  .audit-card {
+    padding: 12px; border-radius: 4px; margin-bottom: 6px;
+    animation: fadeIn 0.3s ease-out;
+  }
+  .audit-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .audit-card-name { font-size: 11px; font-weight: 600; color: var(--text-primary); }
+  .audit-card-det { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
+  .audit-card-finding { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+  .audit-card-evidence { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+
+  .overall-badge {
+    padding: 4px 14px; border-radius: 3px; font-size: 11px;
+    font-weight: 700; letter-spacing: 0.5px;
+  }
+
+  .summary-box {
+    padding: 12px; border-radius: 4px; margin-bottom: 12px;
+    font-size: 11px; color: var(--text-primary); line-height: 1.6;
+  }
+
+  .risk-flags-box {
+    margin-top: 10px; padding: 10px;
+    background: var(--red-bg); border: 1px solid rgba(239,68,68,0.15);
+    border-radius: 4px;
+  }
+  .risk-flags-title { font-size: 10px; color: var(--red); font-weight: 600; margin-bottom: 4px; }
+  .risk-flag { font-size: 11px; color: #fca5a5; line-height: 1.5; }
+
+  /* ─── HUMAN REVIEW ─── */
+  .human-review-box {
+    padding: 20px; background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.2); border-radius: 6px;
+    animation: fadeIn 0.4s ease-out;
+  }
+  .human-review-title { font-size: 13px; font-weight: 700; color: var(--yellow); margin-bottom: 6px; letter-spacing: 0.5px; font-family: var(--sans); }
+  .human-review-desc { font-size: 11px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6; }
+  .human-review-actions { display: flex; gap: 10px; }
+  .btn-human {
+    flex: 1; padding: 12px 20px; border-radius: 4px; font-size: 12px;
+    font-weight: 700; cursor: pointer; font-family: var(--mono);
+    letter-spacing: 0.5px; transition: all 0.2s;
+  }
+  .btn-human:hover { transform: translateY(-1px); }
+  .btn-approve { background: var(--green-bg); border: 1px solid rgba(16,185,129,0.3); color: var(--green); }
+  .btn-override { background: var(--yellow-bg); border: 1px solid rgba(245,158,11,0.3); color: var(--yellow); }
+  .btn-reject { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+
+  /* ─── PROOF ─── */
+  .proof-box {
+    padding: 20px; background: rgba(16,185,129,0.05);
+    border: 1px solid rgba(16,185,129,0.2); border-radius: 6px;
+    margin-top: 16px; animation: fadeIn 0.4s ease-out;
+  }
+  .proof-title { font-size: 13px; font-weight: 700; color: var(--green); margin-bottom: 14px; letter-spacing: 0.5px; font-family: var(--sans); }
+  .proof-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .proof-field {
+    background: rgba(10,14,23,0.6); border-radius: 3px; padding: 8px 10px;
+  }
+  .proof-field-label { font-size: 9px; color: var(--text-dim); letter-spacing: 0.5px; margin-bottom: 2px; }
+  .proof-field-value { font-size: 11px; color: var(--text-primary); word-break: break-all; }
+  .proof-field-value.hash { font-size: 10px; color: var(--blue-pale); }
+
+  /* ─── LOADING ─── */
+  .loading-indicator { display: flex; align-items: center; gap: 12px; padding: 20px; }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border-mid);
+    border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  .loading-text { color: var(--text-muted); font-size: 12px; }
+
+  /* ─── ERROR ─── */
+  .error-box {
+    padding: 20px; background: var(--red-bg);
+    border: 1px solid rgba(239,68,68,0.2); border-radius: 6px;
+  }
+  .error-title { font-size: 12px; font-weight: 700; color: var(--red); margin-bottom: 6px; }
+  .error-msg { font-size: 11px; color: #fca5a5; line-height: 1.6; }
+
+  /* ─── LOG PANEL ─── */
+  .log-header { padding: 14px 16px; border-bottom: 1px solid var(--border-subtle); }
+  .log-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  .log-empty { color: var(--border-mid); font-size: 11px; padding: 12px; text-align: center; }
+  .log-entry {
+    padding: 3px 0; border-bottom: 1px solid rgba(30,41,59,0.3);
+    display: flex; gap: 7px; align-items: flex-start;
+  }
+  .log-ts { color: var(--text-ghost); font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .log-msg { font-size: 10px; line-height: 1.5; word-break: break-word; }
+  .log-msg.info { color: var(--text-muted); }
+  .log-msg.success { color: var(--green); }
+  .log-msg.error { color: var(--red); }
+  .log-msg.warn { color: var(--yellow); }
+  .log-msg.agent { color: var(--blue-light); }
+  .log-msg.system { color: var(--purple); }
+
+  /* ─── API KEY MODAL ─── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+    backdrop-filter: blur(4px);
+  }
+  .modal {
+    background: var(--bg-raised); border: 1px solid var(--border-mid);
+    border-radius: 8px; padding: 32px; max-width: 480px; width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal-title { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; font-family: var(--sans); }
+  .modal-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.6; }
+  .modal-input {
+    width: 100%; padding: 10px 14px; background: var(--bg-deep);
+    border: 1px solid var(--border-mid); border-radius: 4px;
+    color: var(--text-primary); font-family: var(--mono); font-size: 12px;
+    outline: none; margin-bottom: 16px;
+  }
+  .modal-input:focus { border-color: var(--border-active); }
+  .modal-note { font-size: 10px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.5; }
+  .btn-modal {
+    width: 100%; padding: 11px; background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    border: none; border-radius: 4px; color: #fff; font-size: 12px;
+    font-weight: 700; letter-spacing: 1px; cursor: pointer; font-family: var(--mono);
+  }
+  .btn-modal:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────
+const STAGES = { IDLE:"idle", LOADING_PACK:"loading_pack", REASONING:"reasoning", AUDITING:"auditing", HUMAN_REVIEW:"human_review", GENERATING_PROOF:"generating_proof", COMPLETE:"complete", ERROR:"error" };
+
+const CONSTRAINT_PACKS = {
+  "CP-020": {
+    id:"CP-020", name:"U.S. Fair Lending — AI Decision Constraints",
+    packIdentifier:"dcp.reg.us.fed.fair-lending-ai.v1", version:"1.0.0",
+    jurisdiction:"United States (federal)", humanIntervention:"RECOMMENDED",
+    constraints:[
+      {id:"C-020.01",label:"Prohibited Basis Exclusion",text:"No reasoning step may reference, use, or proxy for prohibited bases: race, color, religion, national origin, sex, marital status, age (if applicant can contract), or receipt of public assistance."},
+      {id:"C-020.02",label:"Adverse Action Explanation",text:"When AI-assisted decisions result in adverse action, specific and accurate reasons for denial must be provided — AI systems cannot rely on opaque model explanations."},
+      {id:"C-020.03",label:"Disparate Impact Testing",text:"The AI system must be tested for disparate impact across protected classes."},
+      {id:"C-020.04",label:"Model Risk Management (SR 11-7)",text:"Banking institutions using AI must follow OCC/Fed SR 11-7 model risk management guidance."},
+      {id:"C-020.05",label:"FCRA Compliance",text:"If consumer reports or credit data inform AI decisions, FCRA accuracy, dispute, and permissible purpose requirements apply."},
+    ],
+  },
+  "CP-001": {
+    id:"CP-001", name:"EU AI Act — High-Risk AI Systems",
+    packIdentifier:"dcp.reg.eu.ai-act.high-risk.v1", version:"1.1.0",
+    jurisdiction:"European Union (27 Member States + EEA)", humanIntervention:"MANDATORY",
+    constraints:[
+      {id:"C-001.01",label:"Risk Classification",text:"The AI system must be classified under the EU AI Act risk taxonomy. Systems within Annex III categories must be treated as high-risk."},
+      {id:"C-001.06",label:"Transparency (Art. 13)",text:"The system must be designed to enable deployers to interpret outputs and use them appropriately."},
+      {id:"C-001.07",label:"Human Oversight (Art. 14)",text:"The system must allow effective oversight by natural persons during use, including ability to override outputs."},
+      {id:"C-001.09",label:"Prohibited Practices (Art. 5)",text:"No reasoning step may employ subliminal manipulation, exploitation of vulnerabilities, social scoring, or biometric categorization inferring sensitive attributes."},
+      {id:"C-001.10",label:"Right to Explanation (Art. 86)",text:"Deployers must ensure individuals can obtain meaningful explanations of the AI system's role in decisions affecting them."},
+    ],
+  },
+  "CP-023": {
+    id:"CP-023", name:"EEOC — AI in Employment Decisions",
+    packIdentifier:"dcp.reg.us.fed.eeoc-ai-employment.v1", version:"1.0.0",
+    jurisdiction:"United States (federal)", humanIntervention:"RECOMMENDED",
+    constraints:[
+      {id:"C-023.01",label:"Adverse Impact Analysis",text:"Employers must assess whether AI selection tools result in adverse impact against protected groups (four-fifths rule)."},
+      {id:"C-023.02",label:"ADA Reasonable Accommodation",text:"AI hiring tools must not screen out individuals with disabilities who could perform essential job functions with reasonable accommodation."},
+      {id:"C-023.03",label:"Job-Relatedness",text:"AI-assessed criteria must be job-related and consistent with business necessity."},
+      {id:"C-023.04",label:"Employer Liability",text:"Employers are liable for discrimination caused by third-party AI tools they adopt."},
+      {id:"C-023.05",label:"GINA Compliance",text:"AI tools must not use genetic information in employment decisions."},
+    ],
+  },
+  "CP-035": {
+    id:"CP-035", name:"NIST AI RMF — Implementation",
+    packIdentifier:"dcp.reg.us.nist.ai-rmf.v1", version:"1.0.0",
+    jurisdiction:"United States (voluntary; referenced by Colorado AI Act)", humanIntervention:"RECOMMENDED",
+    constraints:[
+      {id:"C-035.01",label:"GOVERN Function",text:"The organization must establish governance structures for AI risk management including policies, processes, and defined risk tolerances."},
+      {id:"C-035.04",label:"MAP Function",text:"The organization must map AI risks by identifying context, intended use, potential impacts, and affected stakeholders."},
+      {id:"C-035.07",label:"MEASURE Function",text:"The organization must measure AI risks using appropriate metrics, bias testing, performance evaluation, and monitoring."},
+      {id:"C-035.10",label:"MANAGE Function",text:"The organization must manage identified AI risks through prioritization, response actions, resource allocation, and incident response."},
+      {id:"C-035.12",label:"Continuous Monitoring (MG-3)",text:"AI systems must be continuously monitored for performance, risk emergence, and alignment with organizational values."},
+    ],
+  },
+};
+
+const SAMPLE_SCENARIOS = {
+  "CP-020":"Evaluate this mortgage application: Applicant has a credit score of 680, DTI ratio of 38%, 3 years employment at current job as a software engineer earning $95,000/year, requesting $320,000 30-year fixed mortgage. Down payment is 10%. No prior delinquencies. Located in Austin, TX.",
+  "CP-001":"An AI-powered medical triage system in a hospital emergency department is recommending priority levels for incoming patients based on described symptoms, vital signs, and medical history. Patient presents with chest pain, age 62, elevated blood pressure (155/95), diabetic, reporting pain radiating to left arm for 2 hours.",
+  "CP-023":"Evaluate this job candidate for a Senior Data Analyst position: 5 years experience in data analytics, proficient in SQL and Python, MBA from state university, previous roles at two mid-size tech companies, applied through LinkedIn, resume shows 2-year gap between 2020-2022.",
+  "CP-035":"A fintech company is deploying an AI-powered credit decisioning system for small business loans. The system uses alternative data sources (bank transactions, social media signals, supplier payment history) alongside traditional credit bureau data. The company operates in 12 US states.",
+};
+
+let state = {
+  apiKey: localStorage.getItem('dcp_api_key') || '',
+  showModal: !localStorage.getItem('dcp_api_key'),
+  selectedPack: 'CP-020',
+  scenario: SAMPLE_SCENARIOS['CP-020'],
+  stage: STAGES.IDLE,
+  reasoningSteps: null,
+  auditResults: null,
+  humanAction: null,
+  proof: null,
+  error: null,
+  rawReasoning: '',
+  rawAudit: '',
+  expandedPanel: null,
+  logs: [],
+};
+
+function getPack() { return CONSTRAINT_PACKS[state.selectedPack]; }
+
+// ─── SHA-256 ──────────────────────────────────────────────────────────────
+async function sha256(msg) {
+  const buf = new TextEncoder().encode(msg);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ─── LOGGING ──────────────────────────────────────────────────────────────
+function addLog(msg, type='info') {
+  const ts = new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});
+  state.logs.push({ts, msg, type});
+  render();
+  const logBody = document.getElementById('log-body');
+  if (logBody) logBody.scrollTop = logBody.scrollHeight;
+}
+
+// ─── API CALL ─────────────────────────────────────────────────────────────
+async function callClaude(systemPrompt, userMessage) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': state.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error.message || 'API error');
+  return data.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+}
+
+// ─── PIPELINE ─────────────────────────────────────────────────────────────
+async function runPipeline() {
+  state.stage = STAGES.IDLE;
+  state.reasoningSteps = null; state.auditResults = null;
+  state.humanAction = null; state.proof = null; state.error = null;
+  state.rawReasoning = ''; state.rawAudit = '';
+  state.expandedPanel = null; state.logs = [];
+  render();
+
+  const pack = getPack();
+  try {
+    // Stage 1: Load Pack
+    state.stage = STAGES.LOADING_PACK; render();
+    addLog(`Loading constraint pack: ${pack.packIdentifier}`, 'system');
+    addLog(`Version: ${pack.version} | Jurisdiction: ${pack.jurisdiction}`, 'system');
+    addLog(`Constraints loaded: ${pack.constraints.length}`, 'system');
+    addLog(`Human intervention: ${pack.humanIntervention}`, 'system');
+    await new Promise(r => setTimeout(r, 800));
+
+    // Stage 2: Reasoning
+    state.stage = STAGES.REASONING; render();
+    addLog('Initializing Reasoning Agent...', 'agent');
+    addLog('Constructing prompt scaffold from constraint pack...', 'agent');
+
+    const constraintText = pack.constraints.map(c => `${c.id} (${c.label}): ${c.text}`).join('\n\n');
+
+    const reasoningSys = `You are the DCP Reasoning Agent. Your role is to decompose an AI decision into structured, auditable reasoning steps.
+
+You MUST respond ONLY with valid JSON. No markdown, no backticks, no explanation outside the JSON.
+
+For the given decision scenario, produce a JSON array of reasoning steps. Each step must have:
+- "step_number": integer
+- "title": short title of what this step evaluates
+- "data_inputs": array of strings listing what data was considered
+- "method": the analytical approach used
+- "conclusion": the intermediate finding
+- "factors_excluded": array of any factors deliberately not considered (especially prohibited bases)
+- "confidence": number 0-1
+
+You must produce 4-6 steps that decompose the decision in a way that allows evaluation against these regulatory constraints:
+
+${constraintText}
+
+Ensure your decomposition makes the decision auditable against each constraint. Explicitly address prohibited factors, transparency, and explanation requirements in your steps.`;
+
+    addLog('Sending to Reasoning Agent (claude-sonnet-4-20250514)...', 'agent');
+    const reasoningRaw = await callClaude(reasoningSys, `Decompose the following AI decision scenario into structured reasoning steps:\n\n${state.scenario}`);
+    state.rawReasoning = reasoningRaw;
+    addLog('Reasoning Agent response received', 'agent');
+
+    let steps;
+    try {
+      const cleaned = reasoningRaw.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
+      steps = JSON.parse(cleaned);
+      if (!Array.isArray(steps)) steps = steps.steps || steps.reasoning_steps || [steps];
+    } catch(e) {
+      addLog(`JSON parse warning: ${e.message}. Extracting...`, 'warn');
+      const m = reasoningRaw.match(/\[[\s\S]*\]/);
+      if (m) steps = JSON.parse(m[0]); else throw new Error('Could not parse reasoning steps');
+    }
+    state.reasoningSteps = steps;
+    addLog(`Reasoning decomposition complete: ${steps.length} steps produced`, 'success');
+    render();
+
+    // Stage 3: Auditing
+    state.stage = STAGES.AUDITING; render();
+    addLog('Initializing Auditing Agent (adversarial evaluator)...', 'agent');
+
+    const auditSys = `You are the DCP Auditing Agent. You are ADVERSARIAL to the Reasoning Agent. Your job is to rigorously evaluate whether the reasoning steps comply with each regulatory constraint.
+
+You MUST respond ONLY with valid JSON. No markdown, no backticks, no explanation outside the JSON.
+
+Produce a JSON object with:
+- "constraint_evaluations": array of objects, one per constraint, each with:
+  - "constraint_id": the constraint ID
+  - "constraint_label": short name
+  - "determination": one of "COMPLIANT", "WARNING", "VIOLATION", "INDETERMINATE"
+  - "evidence": specific reference to which reasoning step(s) support this determination
+  - "finding": detailed explanation of why this determination was reached
+- "overall_determination": "COMPLIANT", "WARNING", "VIOLATION", or "INDETERMINATE"
+- "overall_summary": brief summary of the audit finding
+- "risk_flags": array of any specific concerns noted
+
+Be rigorous. Look for: implicit proxy use of prohibited factors, insufficient explanation depth, missing documentation of excluded factors, gaps in audit trail. Do not rubber-stamp compliance.`;
+
+    const auditUser = `CONSTRAINT PACK: ${pack.packIdentifier} v${pack.version}\n\nCONSTRAINTS TO EVALUATE AGAINST:\n${constraintText}\n\nREASONING STEPS TO AUDIT:\n${JSON.stringify(steps,null,2)}\n\nORIGINAL SCENARIO:\n${state.scenario}\n\nEvaluate each constraint and produce your audit determination.`;
+
+    addLog('Sending to Auditing Agent (adversarial evaluation)...', 'agent');
+    const auditRaw = await callClaude(auditSys, auditUser);
+    state.rawAudit = auditRaw;
+    addLog('Auditing Agent response received', 'agent');
+
+    let audit;
+    try {
+      const cleaned = auditRaw.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
+      audit = JSON.parse(cleaned);
+    } catch(e) {
+      addLog(`JSON parse warning: ${e.message}. Extracting...`, 'warn');
+      const m = auditRaw.match(/\{[\s\S]*\}/);
+      if (m) audit = JSON.parse(m[0]); else throw new Error('Could not parse audit results');
+    }
+    state.auditResults = audit;
+    const det = audit.overall_determination || 'UNKNOWN';
+    const lt = det==='COMPLIANT'?'success':det==='VIOLATION'?'error':'warn';
+    addLog(`Audit complete. Overall determination: ${det}`, lt);
+    render();
+
+    // Stage 4: Human Review
+    state.stage = STAGES.HUMAN_REVIEW; render();
+    addLog(`Human intervention: ${pack.humanIntervention}. Awaiting reviewer action...`, 'system');
+
+  } catch(err) {
+    state.error = err.message;
+    state.stage = STAGES.ERROR;
+    addLog(`ERROR: ${err.message}`, 'error');
+    render();
+  }
+}
+
+async function handleHumanAction(action) {
+  state.humanAction = action;
+  const lt = action==='approve'?'success':action==='override'?'warn':'error';
+  addLog(`Human reviewer action: ${action.toUpperCase()}`, lt);
+
+  state.stage = STAGES.GENERATING_PROOF; render();
+  addLog('Generating cryptographic proof...', 'system');
+
+  const pack = getPack();
+  const timestamp = new Date().toISOString();
+  const chain = {
+    protocol: "DCP", version: "1.6", timestamp,
+    constraint_pack: {
+      identifier: pack.packIdentifier, version: pack.version,
+      hash: await sha256(JSON.stringify(pack.constraints)),
+    },
+    reasoning_steps: state.reasoningSteps,
+    audit_evaluation: state.auditResults,
+    human_intervention: {
+      required: pack.humanIntervention === "MANDATORY",
+      action, timestamp, reviewer: "human_reviewer_001",
+    },
+    scenario_hash: await sha256(state.scenario),
+  };
+
+  const canonical = JSON.stringify(chain, Object.keys(chain).sort(), 0);
+  const proofHash = await sha256(canonical);
+
+  state.proof = {
+    proof_hash: proofHash,
+    chain_hash: await sha256(JSON.stringify(chain)),
+    constraint_pack_hash: chain.constraint_pack.hash,
+    timestamp, determination: state.auditResults?.overall_determination || 'UNKNOWN',
+    human_action: action,
+    reasoning_steps_count: state.reasoningSteps?.length || 0,
+    constraints_evaluated: state.auditResults?.constraint_evaluations?.length || 0,
+  };
+  state.stage = STAGES.COMPLETE;
+  addLog(`Proof generated: ${proofHash.substring(0,16)}...`, 'success');
+  addLog('Decision Chain Proof attestation complete.', 'system');
+  render();
+}
+
+function resetState() {
+  state.stage = STAGES.IDLE;
+  state.reasoningSteps = null; state.auditResults = null;
+  state.humanAction = null; state.proof = null; state.error = null;
+  state.rawReasoning = ''; state.rawAudit = '';
+  state.expandedPanel = null; state.logs = [];
+  render();
+}
+
+function selectPack(id) {
+  state.selectedPack = id;
+  state.scenario = SAMPLE_SCENARIOS[id];
+  resetState();
+}
+
+function setApiKey() {
+  const input = document.getElementById('api-key-input');
+  if (input && input.value.trim()) {
+    state.apiKey = input.value.trim();
+    localStorage.setItem('dcp_api_key', state.apiKey);
+    state.showModal = false;
+    render();
+  }
+}
+
+function detColor(d) {
+  if (!d) return 'var(--text-muted)';
+  if (d==='COMPLIANT') return 'var(--green)';
+  if (d==='WARNING') return 'var(--yellow)';
+  if (d==='VIOLATION') return 'var(--red)';
+  return 'var(--purple)';
+}
+function detBg(d) {
+  if (!d) return 'rgba(107,114,128,0.1)';
+  if (d==='COMPLIANT') return 'var(--green-bg)';
+  if (d==='WARNING') return 'var(--yellow-bg)';
+  if (d==='VIOLATION') return 'var(--red-bg)';
+  return 'var(--purple-bg)';
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────
+function render() {
+  const pack = getPack();
+  const stageLabels = ['Ready','Load Pack','Reasoning Agent','Auditing Agent','Human Review','Proof Gen','Attested'];
+  const stageKeys = [STAGES.IDLE, STAGES.LOADING_PACK, STAGES.REASONING, STAGES.AUDITING, STAGES.HUMAN_REVIEW, STAGES.GENERATING_PROOF, STAGES.COMPLETE];
+  const currentIdx = stageKeys.indexOf(state.stage);
+  const dotClass = state.stage===STAGES.COMPLETE?'complete':state.stage===STAGES.ERROR?'error':state.stage!==STAGES.IDLE?'active':'';
+
+  let html = '';
+
+  // Modal
+  if (state.showModal) {
+    html += `<div class="modal-overlay"><div class="modal">
+      <div class="modal-title">DCP Prototype — API Key</div>
+      <div class="modal-desc">This prototype makes live API calls to demonstrate the DCP pipeline. Enter your Anthropic API key to begin. The key is stored in your browser's localStorage only.</div>
+      <input id="api-key-input" class="modal-input" type="password" placeholder="sk-ant-..." value="${state.apiKey}" onkeydown="if(event.key==='Enter')setApiKey()">
+      <div class="modal-note">Your key is used directly from the browser via CORS. It is never sent to any server other than api.anthropic.com.</div>
+      <button class="btn-modal" onclick="setApiKey()">INITIALIZE DCP</button>
+    </div></div>`;
+  }
+
+  // Header
+  html += `<div class="header">
+    <div class="header-left">
+      <div class="status-dot ${dotClass}"></div>
+      <span class="logo">DCP</span>
+      <span class="logo-sub">DECISION CHAIN PROOF</span>
+      <span class="version-badge">v1.6 PROTOTYPE</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      ${state.stage!==STAGES.IDLE?`<button class="btn-reset" onclick="resetState()">RESET</button>`:''}
+      <button class="btn-reset" onclick="state.showModal=true;render()">API KEY</button>
+    </div>
+  </div>`;
+
+  // Pipeline bar
+  html += `<div class="pipeline-bar">`;
+  stageLabels.forEach((label, i) => {
+    const isActive = i === currentIdx;
+    const isPast = i < currentIdx;
+    const cls = isActive ? 'active' : isPast ? 'past' : '';
+    html += `<div class="pipeline-step ${cls}">${isPast?'✓ ':''}${label}</div>`;
+    if (i < stageLabels.length - 1) html += `<div class="pipeline-connector ${isPast?'past':''}"></div>`;
+  });
+  html += `</div>`;
+
+  // Main grid
+  html += `<div class="main-grid">`;
+
+  // ── LEFT PANEL ──
+  html += `<div class="left-panel">`;
+  html += `<div class="section-label">CONSTRAINT PACK</div>`;
+  Object.entries(CONSTRAINT_PACKS).forEach(([id, p]) => {
+    const sel = state.selectedPack === id ? 'selected' : '';
+    html += `<button class="pack-btn ${sel}" onclick="selectPack('${id}')">
+      <div class="pack-id">${id}</div><div class="pack-name">${p.name}</div>
+    </button>`;
+  });
+
+  html += `<div class="section-label" style="margin-top:18px">PACK METADATA</div>`;
+  html += `<div class="meta-box">
+    <div class="meta-label">identifier</div><div class="meta-value blue">${pack.packIdentifier}</div>
+    <div class="meta-label">version</div><div class="meta-value">${pack.version}</div>
+    <div class="meta-label">jurisdiction</div><div class="meta-value">${pack.jurisdiction}</div>
+    <div class="meta-label">human_intervention</div>
+    <div class="meta-value ${pack.humanIntervention==='MANDATORY'?'yellow':'green'}">${pack.humanIntervention}</div>
+  </div>`;
+
+  html += `<div class="section-label" style="margin-top:18px">CONSTRAINTS (${pack.constraints.length})</div>`;
+  pack.constraints.forEach(c => {
+    const ev = state.auditResults?.constraint_evaluations?.find(e => e.constraint_id === c.id);
+    const bgStyle = ev ? `background:${detBg(ev.determination)};border-color:${detColor(ev.determination)}33` : '';
+    html += `<div class="constraint-chip" style="${bgStyle}">
+      <div class="constraint-chip-header">
+        <span class="constraint-chip-id">${c.id}</span>
+        ${ev?`<span class="constraint-chip-det" style="color:${detColor(ev.determination)}">${ev.determination}</span>`:''}
+      </div>
+      <div class="constraint-chip-label">${c.label}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  // ── CENTER PANEL ──
+  html += `<div class="center-panel">`;
+
+  // Scenario
+  html += `<div class="scenario-area">
+    <div class="section-label">DECISION SCENARIO</div>
+    <textarea class="scenario-textarea" id="scenario-input" ${state.stage!==STAGES.IDLE?'disabled':''}>${state.scenario}</textarea>`;
+  if (state.stage === STAGES.IDLE) {
+    html += `<button class="btn-run" onclick="state.scenario=document.getElementById('scenario-input').value;runPipeline()">▶ RUN DCP PIPELINE</button>`;
+  }
+  html += `</div>`;
+
+  // Results
+  html += `<div class="results-area">`;
+
+  // Reasoning Steps
+  if (state.reasoningSteps) {
+    html += `<div class="fade-in" style="margin-bottom:20px">`;
+    html += `<div class="result-header"><div class="section-label" style="margin:0">REASONING DECOMPOSITION</div>
+      <button class="btn-raw" onclick="state.expandedPanel=state.expandedPanel==='reasoning'?null:'reasoning';render()">
+        ${state.expandedPanel==='reasoning'?'HIDE RAW':'VIEW RAW'}
+      </button></div>`;
+    if (state.expandedPanel==='reasoning') html += `<pre class="raw-block">${escHtml(state.rawReasoning)}</pre>`;
+    state.reasoningSteps.forEach((step, i) => {
+      html += `<div class="step-card">
+        <div class="step-header">
+          <span class="step-badge">STEP ${step.step_number||i+1}</span>
+          <span class="step-title">${escHtml(step.title||'')}</span>
+          ${step.confidence!==undefined?`<span class="step-conf">conf: ${(step.confidence*100).toFixed(0)}%</span>`:''}
+        </div>
+        <div class="step-conclusion">${escHtml(step.conclusion||'')}</div>`;
+      if (step.data_inputs?.length) html += `<div class="step-inputs"><span>inputs: </span>${escHtml(step.data_inputs.join(', '))}</div>`;
+      if (step.factors_excluded?.length) html += `<div class="step-excluded"><span>excluded: </span>${escHtml(step.factors_excluded.join(', '))}</div>`;
+      html += `</div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Audit Results
+  if (state.auditResults) {
+    const a = state.auditResults;
+    html += `<div class="fade-in" style="margin-bottom:20px">`;
+    html += `<div class="result-header"><div class="section-label" style="margin:0">AUDIT EVALUATION</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-raw" onclick="state.expandedPanel=state.expandedPanel==='audit'?null:'audit';render()">
+          ${state.expandedPanel==='audit'?'HIDE RAW':'VIEW RAW'}
+        </button>
+        <span class="overall-badge" style="color:${detColor(a.overall_determination)};background:${detBg(a.overall_determination)};border:1px solid ${detColor(a.overall_determination)}33">
+          ${a.overall_determination||''}
+        </span>
+      </div></div>`;
+    if (state.expandedPanel==='audit') html += `<pre class="raw-block">${escHtml(state.rawAudit)}</pre>`;
+    if (a.overall_summary) {
+      html += `<div class="summary-box" style="background:${detBg(a.overall_determination)};border:1px solid ${detColor(a.overall_determination)}22">${escHtml(a.overall_summary)}</div>`;
+    }
+    (a.constraint_evaluations||[]).forEach(ev => {
+      html += `<div class="audit-card" style="background:${detBg(ev.determination)};border:1px solid ${detColor(ev.determination)}22">
+        <div class="audit-card-header">
+          <span class="audit-card-name">${escHtml(ev.constraint_id)} — ${escHtml(ev.constraint_label||'')}</span>
+          <span class="audit-card-det" style="color:${detColor(ev.determination)}">${ev.determination}</span>
+        </div>
+        <div class="audit-card-finding">${escHtml(ev.finding||'')}</div>
+        ${ev.evidence?`<div class="audit-card-evidence">evidence: ${escHtml(ev.evidence)}</div>`:''}
+      </div>`;
+    });
+    if (a.risk_flags?.length) {
+      html += `<div class="risk-flags-box"><div class="risk-flags-title">RISK FLAGS</div>`;
+      a.risk_flags.forEach(f => { html += `<div class="risk-flag">• ${escHtml(f)}</div>`; });
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Human Review
+  if (state.stage === STAGES.HUMAN_REVIEW) {
+    html += `<div class="human-review-box">
+      <div class="human-review-title">⚠ HUMAN INTERVENTION REQUIRED</div>
+      <div class="human-review-desc">Constraint pack ${pack.id} requires human review (${pack.humanIntervention}). Review the reasoning decomposition and audit evaluation above, then select your action.</div>
+      <div class="human-review-actions">
+        <button class="btn-human btn-approve" onclick="handleHumanAction('approve')">✓ APPROVE</button>
+        <button class="btn-human btn-override" onclick="handleHumanAction('override')">⚡ OVERRIDE</button>
+        <button class="btn-human btn-reject" onclick="handleHumanAction('reject')">✗ REJECT</button>
+      </div>
+    </div>`;
+  }
+
+  // Proof
+  if (state.proof) {
+    const pf = state.proof;
+    html += `<div class="proof-box">
+      <div class="proof-title">✦ DECISION CHAIN PROOF — ATTESTATION</div>
+      <div class="proof-grid">`;
+    [
+      ['proof_hash', pf.proof_hash, true],
+      ['chain_hash', pf.chain_hash, true],
+      ['constraint_pack_hash', pf.constraint_pack_hash, true],
+      ['timestamp', pf.timestamp, false],
+      ['determination', pf.determination, false],
+      ['human_action', pf.human_action, false],
+      ['reasoning_steps', pf.reasoning_steps_count, false],
+      ['constraints_evaluated', pf.constraints_evaluated, false],
+    ].forEach(([k, v, isHash]) => {
+      const valStyle = k === 'determination' ? `color:${detColor(v)};font-weight:700` : isHash ? 'color:var(--blue-pale);font-size:10px' : '';
+      html += `<div class="proof-field">
+        <div class="proof-field-label">${k}</div>
+        <div class="proof-field-value" style="${valStyle}">${v}</div>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // Loading
+  if ([STAGES.LOADING_PACK, STAGES.REASONING, STAGES.AUDITING, STAGES.GENERATING_PROOF].includes(state.stage)) {
+    const msgs = {
+      [STAGES.LOADING_PACK]: 'Loading constraint pack...',
+      [STAGES.REASONING]: 'Reasoning Agent decomposing decision...',
+      [STAGES.AUDITING]: 'Auditing Agent evaluating compliance...',
+      [STAGES.GENERATING_PROOF]: 'Generating cryptographic proof...',
+    };
+    html += `<div class="loading-indicator"><div class="spinner"></div><span class="loading-text">${msgs[state.stage]}</span></div>`;
+  }
+
+  // Error
+  if (state.stage === STAGES.ERROR) {
+    html += `<div class="error-box">
+      <div class="error-title">PIPELINE ERROR</div>
+      <div class="error-msg">${escHtml(state.error||'')}</div>
+      <button class="btn-reset" style="margin-top:12px" onclick="resetState()">RESET PIPELINE</button>
+    </div>`;
+  }
+
+  html += `</div></div>`; // results-area, center-panel
+
+  // ── RIGHT PANEL ──
+  html += `<div class="right-panel">
+    <div class="log-header"><div class="section-label" style="margin:0">EVENT LOG</div></div>
+    <div class="log-body" id="log-body">`;
+  if (!state.logs.length) {
+    html += `<div class="log-empty">Pipeline events will appear here</div>`;
+  }
+  state.logs.forEach(log => {
+    html += `<div class="log-entry">
+      <span class="log-ts">${log.ts}</span>
+      <span class="log-msg ${log.type}">${escHtml(log.msg)}</span>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  html += `</div>`; // main-grid
+
+  document.getElementById('app').innerHTML = html;
+
+  // Restore scroll & textarea
+  const logBody = document.getElementById('log-body');
+  if (logBody) logBody.scrollTop = logBody.scrollHeight;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
