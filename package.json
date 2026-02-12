@@ -1,0 +1,14 @@
+{
+  "name": "dcp-prototype-demo",
+  "version": "1.0.0",
+  "description": "DCP Decision Chain Proof — Interactive Prototype Demo",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
